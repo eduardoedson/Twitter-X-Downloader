@@ -1,0 +1,58 @@
+.twx-btn-wrap {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 4px;
+}
+
+.twx-btn {
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 9999px;
+  color: rgb(0, 186, 124);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.twx-btn:hover {
+  background-color: rgba(0, 186, 124, 0.1);
+  color: rgb(0, 156, 100);
+}
+
+.twx-btn:focus-visible {
+  outline: 2px solid rgb(0, 186, 124);
+  outline-offset: 1px;
+}
+
+.twx-btn--loading {
+  color: rgb(0, 186, 124);
+  opacity: 0.7;
+}
+
+.twx-btn--ok {
+  color: rgb(140, 86, 217);
+}
+
+.twx-btn--ok:hover {
+  background-color: rgba(140, 86, 217, 0.1);
+  color: rgb(120, 66, 197);
+}
+
+.twx-btn--error {
+  color: rgb(244, 33, 46);
+}
+
+.twx-btn--error:hover {
+  background-color: rgba(244, 33, 46, 0.1);
+  color: rgb(244, 33, 46);
+}
+
+.twx-btn svg {
+  pointer-events: none;
+}
