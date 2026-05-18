@@ -36,7 +36,7 @@
       "run_at": "document_idle"
     }
   ],
-  "permissions": ["downloads", "storage"],
+  "permissions": ["downloads"],
   "host_permissions": [
     "https://x.com/*",
     "https://twitter.com/*",

@@ -91,7 +91,6 @@ public/icons/                  16/32/48/128 PNG extension icons
 | Permission | Purpose |
 |---|---|
 | `downloads` | Save files via `chrome.downloads` |
-| `storage` | Reserved for preferences (not used yet) |
 | host `x.com`, `twitter.com` | Run content scripts |
 | host `video.twimg.com`, `pbs.twimg.com` | X media CDNs (videos and images) |
 
