@@ -1,3 +1,5 @@
+import { extensionFromUrl } from '../shared/filename';
+
 export interface Variant {
   bitrate?: number;
   contentType: string;
@@ -64,11 +66,8 @@ function walk(node: unknown, out: Map<string, TweetMedia>, seen: WeakSet<object>
     const media = legacy.extended_entities.media
       .map(parseMediaItem)
       .filter((m): m is MediaItem => m !== null);
-    if (media.length) {
-      // Prefer first hit; later entries may be retweet wrappers with duplicate info.
-      if (!out.has(tweetId)) {
-        out.set(tweetId, { tweetId, username, media });
-      }
+    if (media.length && !out.has(tweetId)) {
+      out.set(tweetId, { tweetId, username, media });
     }
   }
 
@@ -82,8 +81,6 @@ function walk(node: unknown, out: Map<string, TweetMedia>, seen: WeakSet<object>
 }
 
 function toOriginalPhotoUrl(rawUrl: string): string {
-  // pbs.twimg.com serves resized variants via ?name=small|medium|large.
-  // ?name=orig returns the uncompressed original.
   try {
     const u = new URL(rawUrl);
     u.searchParams.set('name', 'orig');
@@ -93,7 +90,7 @@ function toOriginalPhotoUrl(rawUrl: string): string {
   }
 }
 
-export function filenameFor(
+export function filenameForTweet(
   username: string,
   tweetId: string,
   item: MediaItem,
@@ -103,23 +100,10 @@ export function filenameFor(
   const base = `${username || 'x'}-${tweetId}`;
   const suffix = total > 1 ? `-${index + 1}` : '';
   if (item.type === 'photo') {
-    const ext = extFromUrl(item.bestUrl, 'jpg');
+    const ext = extensionFromUrl(item.bestUrl, 'jpg');
     return `${base}${suffix}.${ext}`;
   }
   return `${base}${suffix}.mp4`;
-}
-
-function extFromUrl(url: string, fallback: string): string {
-  try {
-    const u = new URL(url);
-    const fmt = u.searchParams.get('format');
-    if (fmt) return fmt;
-    const m = u.pathname.match(/\.([a-z0-9]+)$/i);
-    if (m) return m[1].toLowerCase();
-  } catch {
-    /* ignore */
-  }
-  return fallback;
 }
 
 function parseMediaItem(m: RawMedia | undefined): MediaItem | null {
@@ -156,3 +140,4 @@ function parseMediaItem(m: RawMedia | undefined): MediaItem | null {
 
   return null;
 }
+

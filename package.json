@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Chrome extension to download videos from X (Twitter)",
+  "description": "Chrome extension to download media from X (Twitter)",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

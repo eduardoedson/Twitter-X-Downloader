@@ -1,12 +1,20 @@
+import { TWX_DOWNLOAD_MESSAGE_TYPE } from '../modules/twitter/constants';
+
 interface DownloadMessage {
-  type: 'twx-download';
+  type: typeof TWX_DOWNLOAD_MESSAGE_TYPE;
   url: string;
   filename?: string;
 }
 
 chrome.runtime.onMessage.addListener(
   (msg: DownloadMessage, _sender, sendResponse: (resp: { ok: boolean; id?: number; error?: string }) => void) => {
-    if (msg?.type !== 'twx-download' || !msg.url) return;
+    if (
+      !msg ||
+      msg.type !== TWX_DOWNLOAD_MESSAGE_TYPE ||
+      !msg.url
+    ) {
+      return;
+    }
 
     chrome.downloads.download(
       {
@@ -27,5 +35,7 @@ chrome.runtime.onMessage.addListener(
 );
 
 function sanitizeFilename(name: string): string {
-  return name.replace(/[\\/:*?"<>|]/g, '_').slice(0, 200);
+  return name.replaceAll(/[\\/:*?"<>|]/g, '_').slice(0, 200);
 }
+
+
