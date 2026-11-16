@@ -1,6 +1,10 @@
 import { downloadMany } from '../shared/download';
 import { createDownloadButton, setButtonState } from '../shared/ui';
-import { TWX_GRAPHQL_MESSAGE_SOURCE, TWX_GRAPHQL_MESSAGE_TYPE } from './constants';
+import {
+  TWX_GRAPHQL_MESSAGE_SOURCE,
+  TWX_GRAPHQL_MESSAGE_TYPE,
+  TWX_GRAPHQL_REPLAY_TYPE,
+} from './constants';
 import { extractTweets, filenameForTweet, type TweetMedia } from './parser';
 
 const tweetMediaCache = new Map<string, TweetMedia>();
@@ -15,6 +19,13 @@ function bindGraphqlListener() {
     const found = extractTweets(data.data);
     for (const [id, m] of found) tweetMediaCache.set(id, m);
   });
+
+  // Ask the MAIN-world interceptor to resend requests that completed before this
+  // document_idle content script was able to attach its listener.
+  window.postMessage(
+    { source: TWX_GRAPHQL_MESSAGE_SOURCE, type: TWX_GRAPHQL_REPLAY_TYPE },
+    '*',
+  );
 }
 
 function tweetIdFromArticle(article: HTMLElement): string | null {
@@ -102,12 +113,22 @@ function scan() {
   document.querySelectorAll<HTMLElement>('article[data-testid="tweet"]').forEach(injectButton);
 }
 
+function startDomObserver() {
+  const root = document.documentElement;
+  if (!root) {
+    document.addEventListener('DOMContentLoaded', startDomObserver, { once: true });
+    return;
+  }
+
+  const observer = new MutationObserver(() => scan());
+  observer.observe(root, { childList: true, subtree: true });
+  scan();
+}
+
 export function initTwitterModule() {
   if (twitterModuleStarted) return;
   twitterModuleStarted = true;
   bindGraphqlListener();
-  const observer = new MutationObserver(() => scan());
-  observer.observe(document.body, { childList: true, subtree: true });
-  scan();
+  startDomObserver();
 }
 

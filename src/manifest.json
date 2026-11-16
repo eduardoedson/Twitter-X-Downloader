@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Twitter/X Downloader",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Download any media (photos, GIFs, videos) from X (Twitter) with one click.",
   "icons": {
     "16": "icons/icon16.png",
@@ -33,7 +33,7 @@
       "matches": ["https://x.com/*", "https://twitter.com/*"],
       "js": ["src/content/index.ts"],
       "css": ["src/content/content.css"],
-      "run_at": "document_idle"
+      "run_at": "document_start"
     }
   ],
   "permissions": ["downloads"],

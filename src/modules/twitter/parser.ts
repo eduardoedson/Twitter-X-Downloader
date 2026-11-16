@@ -35,11 +35,17 @@ interface RawTweetLegacy {
 }
 
 interface RawTweetResult {
+  rest_id?: string;
   legacy?: RawTweetLegacy;
   core?: {
-    user_results?: { result?: { legacy?: { screen_name?: string } } };
-    user_result?: { result?: { legacy?: { screen_name?: string } } };
+    user_results?: { result?: RawUserResult };
+    user_result?: { result?: RawUserResult };
   };
+}
+
+interface RawUserResult {
+  legacy?: { screen_name?: string };
+  core?: { screen_name?: string };
 }
 
 export function extractTweets(
@@ -57,11 +63,13 @@ function walk(node: unknown, out: Map<string, TweetMedia>, seen: WeakSet<object>
 
   const candidate = node as RawTweetResult;
   const legacy = candidate.legacy;
-  if (legacy?.id_str && legacy.extended_entities?.media?.length) {
-    const tweetId = legacy.id_str;
+  const tweetId = candidate.rest_id ?? legacy?.id_str;
+  if (tweetId && legacy?.extended_entities?.media?.length) {
     const username =
       candidate.core?.user_results?.result?.legacy?.screen_name ??
+      candidate.core?.user_results?.result?.core?.screen_name ??
       candidate.core?.user_result?.result?.legacy?.screen_name ??
+      candidate.core?.user_result?.result?.core?.screen_name ??
       '';
     const media = legacy.extended_entities.media
       .map(parseMediaItem)

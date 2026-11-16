@@ -1,30 +1,51 @@
-import { TWX_GRAPHQL_MESSAGE_SOURCE, TWX_GRAPHQL_MESSAGE_TYPE } from '../modules/twitter/constants';
+import {
+	TWX_GRAPHQL_MESSAGE_SOURCE,
+	TWX_GRAPHQL_MESSAGE_TYPE,
+	TWX_GRAPHQL_REPLAY_TYPE,
+} from '../modules/twitter/constants';
 
 // Runs in the page's MAIN world at document_start.
 // Patches fetch + XHR to forward X GraphQL responses to the isolated content script via postMessage.
 
 (() => {
-  const TARGET_OPS = [
-	'TweetResultByRestId',
-	'TweetResultsByRestIds',
-	'TweetDetail',
-	'HomeTimeline',
-	'HomeLatestTimeline',
-	'UserTweets',
-	'UserTweetsAndReplies',
-	'UserMedia',
-	'Likes',
-	'Bookmarks',
-	'SearchTimeline',
-	'ListLatestTweetsTimeline',
-  ];
+	const capturedResponses: Array<{ url: string; data: unknown }> = [];
+	const MAX_CAPTURED_RESPONSES = 30;
+	let receiverReady = false;
 
-  const matchesTarget = (url: string) =>
-	url.includes('/graphql/') && TARGET_OPS.some((op) => url.includes(`/${op}`));
+	// Operation names change frequently. Capturing every GraphQL response is more
+	// reliable than maintaining an allowlist, and the isolated script only retains
+	// objects that the tweet parser recognizes as downloadable media.
+	const matchesTarget = (url: string) =>
+		url.includes('/graphql/') || url.includes('/i/api/2/timeline/');
 
   const forward = (url: string, data: unknown) => {
+	if (!receiverReady) {
+		capturedResponses.push({ url, data });
+		if (capturedResponses.length > MAX_CAPTURED_RESPONSES) capturedResponses.shift();
+	}
 	window.postMessage({ source: TWX_GRAPHQL_MESSAGE_SOURCE, type: TWX_GRAPHQL_MESSAGE_TYPE, url, data }, '*');
   };
+
+	// Keep a small replay buffer in case browser scheduling lets an early profile
+	// response finish before the isolated-world listener announces that it is ready.
+	window.addEventListener('message', (event) => {
+		if (event.source !== window || event.origin !== window.location.origin) return;
+		const message = event.data as { source?: string; type?: string } | undefined;
+		if (message?.source !== TWX_GRAPHQL_MESSAGE_SOURCE || message.type !== TWX_GRAPHQL_REPLAY_TYPE) return;
+		receiverReady = true;
+		for (const response of capturedResponses) {
+			window.postMessage(
+				{
+					source: TWX_GRAPHQL_MESSAGE_SOURCE,
+					type: TWX_GRAPHQL_MESSAGE_TYPE,
+					url: response.url,
+					data: response.data,
+				},
+				'*',
+			);
+		}
+		capturedResponses.length = 0;
+	});
 
   const origFetch = window.fetch.bind(window);
   window.fetch = function patchedFetch(input: RequestInfo | URL, init?: RequestInit) {
