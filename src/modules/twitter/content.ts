@@ -8,6 +8,7 @@ import {
 import { extractTweets, filenameForTweet, type TweetMedia } from './parser';
 
 const tweetMediaCache = new Map<string, TweetMedia>();
+const TWEET_SELECTOR = 'article[data-testid="tweet"], [role="article"]';
 
 let twitterModuleStarted = false;
 
@@ -39,8 +40,36 @@ function tweetIdFromArticle(article: HTMLElement): string | null {
 
 function articleHasMedia(article: HTMLElement): boolean {
   return !!article.querySelector(
-    'video, [data-testid="videoComponent"], [data-testid="videoPlayer"], [data-testid="tweetPhoto"]',
+    'video, [data-testid="videoComponent"], [data-testid="videoPlayer"], ' +
+      '[data-testid="tweetPhoto"], a[href*="/photo/"]',
   );
+}
+
+function findActionBar(article: HTMLElement): HTMLElement | null {
+  const groups = article.querySelectorAll<HTMLElement>('[role="group"]');
+
+  // The current X UI no longer exposes stable data-testid values on every
+  // action. The reply link remains a reliable structural marker of the bar.
+  for (const group of Array.from(groups)) {
+    if (group.closest(TWEET_SELECTOR) !== article) continue;
+    if (group.querySelector('a[href*="/compose/post?in_reply_to="]')) return group;
+  }
+
+  // Compatibility with older variants of the X interface.
+  for (const group of Array.from(groups)) {
+    if (group.closest(TWEET_SELECTOR) !== article) continue;
+    if (
+      group.querySelector(
+        '[data-testid="reply"], [data-testid="retweet"], [data-testid="unretweet"], ' +
+          '[data-testid="like"], [data-testid="unlike"], [data-testid="bookmark"], ' +
+          '[data-testid="removeBookmark"], [data-testid="share"]',
+      )
+    ) {
+      return group;
+    }
+  }
+
+  return null;
 }
 
 async function waitForMedia(tweetId: string, timeoutMs = 4000): Promise<TweetMedia | null> {
@@ -53,16 +82,12 @@ async function waitForMedia(tweetId: string, timeoutMs = 4000): Promise<TweetMed
   return tweetMediaCache.get(tweetId) ?? null;
 }
 
-function injectButton(article: HTMLElement) {
-  if (article.dataset.twxInjected) return;
-  if (!articleHasMedia(article)) return;
-  const tweetId = tweetIdFromArticle(article);
-  if (!tweetId) return;
+function injectButton(actionBar: HTMLElement, tweetId: string, scope?: HTMLElement) {
+  // X frequently replaces the action bar while keeping the surrounding article.
+  // Check the live DOM instead of permanently marking the article as injected.
+  if (actionBar.querySelector(':scope > .twx-btn-wrap')) return;
 
-  const actionBar = article.querySelector<HTMLElement>('[role="group"]');
-  if (!actionBar) return;
-
-  article.dataset.twxInjected = '1';
+  scope?.querySelectorAll<HTMLElement>('.twx-btn-wrap').forEach((existing) => existing.remove());
 
   const wrap = document.createElement('div');
   wrap.className = 'twx-btn-wrap';
@@ -110,7 +135,29 @@ function injectButton(article: HTMLElement) {
 }
 
 function scan() {
-  document.querySelectorAll<HTMLElement>('article[data-testid="tweet"]').forEach(injectButton);
+  // The reply URL contains the tweet ID and is the most stable marker in both
+  // the legacy and current X action bars. Starting from the bar avoids relying
+  // on X's frequently changing article and media markup.
+  document.querySelectorAll<HTMLElement>('[role="group"]').forEach((actionBar) => {
+    const replyLink = actionBar.querySelector<HTMLAnchorElement>(
+      'a[href*="/compose/post?in_reply_to="]',
+    );
+    if (!replyLink) return;
+
+    const tweetId = new URL(replyLink.href, location.href).searchParams.get('in_reply_to');
+    if (!tweetId) return;
+
+    const article = actionBar.closest<HTMLElement>(TWEET_SELECTOR) ?? undefined;
+    injectButton(actionBar, tweetId, article);
+  });
+
+  // Fallback for older X variants where reply is not rendered as a link.
+  document.querySelectorAll<HTMLElement>(TWEET_SELECTOR).forEach((article) => {
+    if (!articleHasMedia(article)) return;
+    const tweetId = tweetIdFromArticle(article);
+    const actionBar = findActionBar(article);
+    if (tweetId && actionBar) injectButton(actionBar, tweetId, article);
+  });
 }
 
 function startDomObserver() {
