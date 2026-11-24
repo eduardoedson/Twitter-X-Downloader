@@ -5,7 +5,7 @@ import {
   TWX_GRAPHQL_MESSAGE_TYPE,
   TWX_GRAPHQL_REPLAY_TYPE,
 } from './constants';
-import { extractTweets, filenameForTweet, type TweetMedia } from './parser';
+import { extractTweets, filenameForTweet, type MediaItem, type TweetMedia } from './parser';
 
 const tweetMediaCache = new Map<string, TweetMedia>();
 const TWEET_SELECTOR = 'article[data-testid="tweet"], [role="article"]';
@@ -82,6 +82,86 @@ async function waitForMedia(tweetId: string, timeoutMs = 4000): Promise<TweetMed
   return tweetMediaCache.get(tweetId) ?? null;
 }
 
+function findTweetScope(actionBar: HTMLElement, tweetId: string): HTMLElement | undefined {
+  const article = actionBar.closest<HTMLElement>(TWEET_SELECTOR);
+  if (article) return article;
+
+  let current = actionBar.parentElement;
+  while (current && current !== document.body) {
+    if (current.querySelector(`a[href*="/status/${tweetId}"]`)) return current;
+    current = current.parentElement;
+  }
+  return undefined;
+}
+
+function mediaFromDom(scope: HTMLElement | undefined, tweetId: string): TweetMedia | null {
+  if (!scope) return null;
+
+  const media: MediaItem[] = [];
+  const seen = new Set<string>();
+
+  const resourceUrls = performance
+    .getEntriesByType('resource')
+    .map((entry) => entry.name)
+    .filter((url) => url.startsWith('https://video.twimg.com/'));
+
+  for (const video of Array.from(scope.querySelectorAll<HTMLVideoElement>('video'))) {
+    const poster = video.poster;
+    const mediaId = poster.match(
+      /\/(?:ext_tw_video_thumb|amplify_video_thumb|tweet_video_thumb)\/(\d+)\//,
+    )?.[1];
+    const directCandidates = [
+      video.currentSrc,
+      video.src,
+      ...Array.from(video.querySelectorAll<HTMLSourceElement>('source')).map((source) => source.src),
+    ].filter((url) => /^https:\/\/video\.twimg\.com\/.*\.mp4(?:\?|$)/.test(url));
+    const observedCandidates = resourceUrls.filter(
+      (url) =>
+        url.includes('.mp4') &&
+        (!mediaId || url.includes(`/${mediaId}/`) || url.includes(`_${mediaId}/`)),
+    );
+    const candidates = [...directCandidates, ...observedCandidates];
+    const bestUrl = candidates.sort((a, b) => videoResolutionScore(b) - videoResolutionScore(a))[0];
+    if (!bestUrl || seen.has(bestUrl)) continue;
+    seen.add(bestUrl);
+    media.push({ type: 'video', bestUrl, posterUrl: poster || undefined });
+  }
+
+  for (const image of Array.from(
+    scope.querySelectorAll<HTMLImageElement>('img[src*="pbs.twimg.com/"]'),
+  )) {
+    try {
+      const url = new URL(image.currentSrc || image.src);
+      if (
+        /\/(?:profile_images|profile_banners|emoji)\//.test(url.pathname) ||
+        /\/(?:ext_tw_video_thumb|amplify_video_thumb|tweet_video_thumb)\//.test(url.pathname)
+      ) {
+        continue;
+      }
+      if (image.naturalWidth < 150 || image.naturalHeight < 150) continue;
+      url.searchParams.set('name', 'orig');
+      const bestUrl = url.toString();
+      if (seen.has(bestUrl)) continue;
+      seen.add(bestUrl);
+      media.push({ type: 'photo', bestUrl });
+    } catch {
+      // Ignore malformed or transient image URLs.
+    }
+  }
+
+  if (media.length === 0) return null;
+
+  const statusLink = scope.querySelector<HTMLAnchorElement>(`a[href*="/status/${tweetId}"]`);
+  const username = statusLink?.pathname.match(/^\/([^/]+)\/status\//)?.[1] ?? '';
+  return { tweetId, username, media };
+}
+
+function videoResolutionScore(url: string): number {
+  const dimensions = url.match(/\/(\d+)x(\d+)\//);
+  if (!dimensions) return 0;
+  return Number(dimensions[1]) * Number(dimensions[2]);
+}
+
 function injectButton(actionBar: HTMLElement, tweetId: string, scope?: HTMLElement) {
   // X frequently replaces the action bar while keeping the surrounding article.
   // Check the live DOM instead of permanently marking the article as injected.
@@ -99,7 +179,8 @@ function injectButton(actionBar: HTMLElement, tweetId: string, scope?: HTMLEleme
     e.stopPropagation();
     setButtonState(btn, 'loading');
 
-    const data = await waitForMedia(tweetId);
+    const domData = mediaFromDom(scope, tweetId);
+    const data = tweetMediaCache.get(tweetId) ?? domData ?? (await waitForMedia(tweetId));
     if (!data || data.media.length === 0) {
       setButtonState(btn, 'error');
       alert(
@@ -147,7 +228,7 @@ function scan() {
     const tweetId = new URL(replyLink.href, location.href).searchParams.get('in_reply_to');
     if (!tweetId) return;
 
-    const article = actionBar.closest<HTMLElement>(TWEET_SELECTOR) ?? undefined;
+    const article = findTweetScope(actionBar, tweetId);
     injectButton(actionBar, tweetId, article);
   });
 
