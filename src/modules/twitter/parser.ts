@@ -133,8 +133,17 @@ function parseMediaItem(m: RawMedia | undefined): MediaItem | null {
         url: v.url,
       }));
 
-    const mp4s = variants.filter((v) => v.contentType === 'video/mp4');
-    const best = mp4s.sort((a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0))[0];
+    const mp4s = variants.filter(
+      (v) =>
+        v.contentType === 'video/mp4' &&
+        !/(?:^|\/)(?:init|initialization)\.mp4(?:\?|$)/i.test(v.url) &&
+        !/\/aud\//.test(v.url) &&
+        !/\/(?:aud|vid)\/[^/]+\/0\/0\//.test(v.url),
+    );
+    const hls = variants.find((v) =>
+      /(?:application\/x-mpegurl|application\/vnd\.apple\.mpegurl)/i.test(v.contentType),
+    );
+    const best = mp4s.sort((a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0))[0] ?? hls;
     if (!best) return null;
 
     return {
