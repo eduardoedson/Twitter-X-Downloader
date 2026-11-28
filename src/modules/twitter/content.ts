@@ -329,8 +329,9 @@ function mediaFromDom(scope: HTMLElement | undefined, tweetId: string): TweetMed
       })
       .filter((item): item is { url: string; bitrate: number } => item !== null)
       .sort((a, b) => b.bitrate - a.bitrate)[0]?.url;
-    return video && audio
-      ? `twx-hls:${encodeURIComponent(JSON.stringify({ video, audio }))}`
+    // Audio is optional: videos uploaded without sound have no audio playlist.
+    return video
+      ? `twx-hls:${encodeURIComponent(JSON.stringify(audio ? { video, audio } : { video }))}`
       : null;
   })();
 

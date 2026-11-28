@@ -659,8 +659,18 @@ function attribute(line: string, name: string): string | null {
   return line.match(new RegExp(`${name}=(?:"([^"]+)"|([^,]+))`))?.slice(1).find(Boolean) ?? null;
 }
 
-function selectPlaylists(master: string, masterUrl: string): { video: string; audio: string } {
+interface SelectedPlaylists {
+  video: string;
+  // Videos uploaded without sound have no audio rendition in the master playlist.
+  audio?: string;
+}
+
+function selectPlaylists(master: string, masterUrl: string): SelectedPlaylists {
   const lines = master.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  // A media playlist given directly (no variants) is used as the video track.
+  if (lines.some((line) => line.startsWith('#EXTINF')) && !lines.some((line) => line.startsWith('#EXT-X-STREAM-INF'))) {
+    return { video: masterUrl };
+  }
   const videos: Array<{ url: string; area: number; bandwidth: number }> = [];
   const audios: Array<{ url: string; bandwidth: number }> = [];
 
@@ -686,7 +696,7 @@ function selectPlaylists(master: string, masterUrl: string): { video: string; au
 
   const video = videos.sort((a, b) => b.area - a.area || b.bandwidth - a.bandwidth)[0]?.url;
   const audio = audios.sort((a, b) => b.bandwidth - a.bandwidth)[0]?.url;
-  if (!video || !audio) throw new Error('The HLS manifest has no usable video/audio tracks.');
+  if (!video) throw new Error('The HLS manifest has no usable video track.');
   return { video, audio };
 }
 
@@ -720,12 +730,11 @@ async function fetchParts(urls: string[]): Promise<ArrayBuffer[]> {
 }
 
 export async function hlsToMp4(masterUrl: string): Promise<Blob> {
-  let selected: { video: string; audio: string };
+  let selected: SelectedPlaylists;
   if (masterUrl.startsWith('twx-hls:')) {
-    selected = JSON.parse(decodeURIComponent(masterUrl.slice('twx-hls:'.length))) as {
-      video: string;
-      audio: string;
-    };
+    selected = JSON.parse(
+      decodeURIComponent(masterUrl.slice('twx-hls:'.length)),
+    ) as SelectedPlaylists;
   } else {
     const masterResponse = await fetch(masterUrl, { credentials: 'omit' });
     if (!masterResponse.ok) {
@@ -738,15 +747,14 @@ export async function hlsToMp4(masterUrl: string): Promise<Blob> {
     if (!response.ok) throw new Error(`HLS playlist request failed (${response.status}).`);
     return response.text();
   };
-  const [videoPlaylist, audioPlaylist] = await Promise.all([
-    fetchText(selected.video),
-    fetchText(selected.audio),
+  const loadTrack = async (url: string) =>
+    parseTrack(await fetchParts(playlistParts(await fetchText(url), url)));
+
+  const [video, audio] = await Promise.all([
+    loadTrack(selected.video),
+    selected.audio ? loadTrack(selected.audio) : Promise.resolve(null),
   ]);
-  const [videoParts, audioParts] = await Promise.all([
-    fetchParts(playlistParts(videoPlaylist, selected.video)),
-    fetchParts(playlistParts(audioPlaylist, selected.audio)),
-  ]);
-  return buildMp4([parseTrack(videoParts), parseTrack(audioParts)]);
+  return buildMp4(audio ? [video, audio] : [video]);
 }
 
 export function saveBlob(blob: Blob, filename: string): void {
